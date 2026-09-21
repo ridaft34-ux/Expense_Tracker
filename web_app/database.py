@@ -1,48 +1,89 @@
-import sqlite3
-from pathlib import Path
+"""
+MySQL database module for the Expense Tracker web application.
+"""
+
+import os
+import mysql.connector
+from mysql.connector import Error
 
 
-# Database location
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-DATABASE = DATA_DIR / "expenses.db"
+DB_NAME = os.getenv("MYSQL_DATABASE", "expense_tracker")
+DB_HOST = os.getenv("MYSQL_HOST", "localhost")
+DB_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+DB_USER = os.getenv("MYSQL_USER", "root")
+DB_PASSWORD = os.getenv("MYSQL_PASSWORD", "rida34")
+
+
+def _server_connection():
+    """Connect to MySQL server without selecting a database."""
+    return mysql.connector.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+
+
+def initialize_database():
+    """Create the MySQL database if it does not already exist."""
+    connection = _server_connection()
+    cursor = connection.cursor()
+
+    cursor.execute(
+        f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` "
+        "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+    )
+
+    connection.commit()
+    cursor.close()
+    connection.close()
 
 
 def get_connection():
-    DATA_DIR.mkdir(exist_ok=True)
+    """Return a connection to the Expense Tracker MySQL database."""
+    initialize_database()
 
-    connection = sqlite3.connect(DATABASE)
-    connection.row_factory = sqlite3.Row
-
-    return connection
+    return mysql.connector.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
 
 
 def create_table():
     connection = get_connection()
+    cursor = connection.cursor()
 
-    connection.execute("""
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            amount REAL NOT NULL,
-            category TEXT NOT NULL,
-            description TEXT,
-            date TEXT NOT NULL
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            amount DECIMAL(10, 2) NOT NULL,
+            category VARCHAR(100) NOT NULL,
+            description VARCHAR(500),
+            date DATE NOT NULL
         )
     """)
 
     connection.commit()
+    cursor.close()
     connection.close()
 
 
 def get_all_expenses():
     connection = get_connection()
+    cursor = connection.cursor(dictionary=True)
 
-    expenses = connection.execute("""
+    cursor.execute("""
         SELECT *
         FROM expenses
         ORDER BY date DESC, id DESC
-    """).fetchall()
+    """)
 
+    expenses = cursor.fetchall()
+
+    cursor.close()
     connection.close()
 
     return expenses
@@ -50,92 +91,94 @@ def get_all_expenses():
 
 def add_expense(amount, category, description, date):
     connection = get_connection()
+    cursor = connection.cursor()
 
-    connection.execute("""
+    cursor.execute("""
         INSERT INTO expenses
         (amount, category, description, date)
-        VALUES (?, ?, ?, ?)
-    """, (
-        amount,
-        category,
-        description,
-        date
-    ))
+        VALUES (%s, %s, %s, %s)
+    """, (amount, category, description, date))
 
     connection.commit()
+    cursor.close()
     connection.close()
 
 
 def delete_expense(expense_id):
     connection = get_connection()
+    cursor = connection.cursor()
 
-    connection.execute(
-        "DELETE FROM expenses WHERE id = ?",
+    cursor.execute(
+        "DELETE FROM expenses WHERE id = %s",
         (expense_id,)
     )
 
     connection.commit()
+    cursor.close()
     connection.close()
 
 
-def update_expense(
-    expense_id,
-    amount,
-    category,
-    description,
-    date
-):
+def update_expense(expense_id, amount, category, description, date):
     connection = get_connection()
+    cursor = connection.cursor()
 
-    connection.execute("""
+    cursor.execute("""
         UPDATE expenses
-        SET amount = ?,
-            category = ?,
-            description = ?,
-            date = ?
-        WHERE id = ?
-    """, (
-        amount,
-        category,
-        description,
-        date,
-        expense_id
-    ))
+        SET amount = %s,
+            category = %s,
+            description = %s,
+            date = %s
+        WHERE id = %s
+    """, (amount, category, description, date, expense_id))
 
     connection.commit()
+    cursor.close()
     connection.close()
 
 
 def get_expense(expense_id):
     connection = get_connection()
+    cursor = connection.cursor(dictionary=True)
 
-    expense = connection.execute(
-        "SELECT * FROM expenses WHERE id = ?",
+    cursor.execute(
+        "SELECT * FROM expenses WHERE id = %s",
         (expense_id,)
-    ).fetchone()
+    )
 
+    expense = cursor.fetchone()
+
+    cursor.close()
     connection.close()
 
     return expense
+
+
 def get_monthly_expenses(month):
-    """Get expenses for a specific month."""
-
+    """Get expenses for a specific month in YYYY-MM format."""
     connection = get_connection()
+    cursor = connection.cursor(dictionary=True)
 
-    expenses = connection.execute("""
+    cursor.execute("""
         SELECT *
         FROM expenses
-        WHERE date LIKE ?
+        WHERE DATE_FORMAT(date, '%%Y-%%m') = %s
         ORDER BY date DESC, id DESC
-    """, (
-        month + "%",
-    )).fetchall()
+    """, (month,))
 
+    expenses = cursor.fetchall()
+
+    cursor.close()
     connection.close()
 
     return expenses
+
+
 def clear_all_expenses():
     connection = get_connection()
-    connection.execute("DELETE FROM expenses")
+    cursor = connection.cursor()
+
+    cursor.execute("DELETE FROM expenses")
+
     connection.commit()
+    cursor.close()
     connection.close()
